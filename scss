@@ -1,0 +1,93 @@
+
+---
+
+### 🔧 `nst.py`
+```python
+import tensorflow as tf
+from tensorflow.keras.applications import vgg19
+from tensorflow.keras.models import Model
+import numpy as np
+import matplotlib.pyplot as plt
+from PIL import Image
+
+# Load image
+def load_img(path_to_img, max_dim=512):
+    img = Image.open(path_to_img)
+    img = img.resize((max_dim, int(max_dim * img.height / img.width)))
+    img = tf.keras.preprocessing.image.img_to_array(img)
+    img = np.expand_dims(img, axis=0)
+    return vgg19.preprocess_input(img)
+
+def deprocess_img(processed_img):
+    x = processed_img.copy()
+    x = x.reshape((x.shape[1], x.shape[2], 3))
+    x[:, :, 0] += 103.939
+    x[:, :, 1] += 116.779
+    x[:, :, 2] += 123.68
+    return np.clip(x[:, :, ::-1], 0, 255).astype('uint8')
+
+# Load images
+content_image = load_img("content.jpg")
+style_image = load_img("style.jpg")
+
+# VGG19 layers
+content_layers = ['block5_conv2']
+style_layers = ['block1_conv1','block2_conv1','block3_conv1','block4_conv1','block5_conv1']
+num_content_layers = len(content_layers)
+num_style_layers = len(style_layers)
+
+# Feature extractor
+def get_model():
+    vgg = vgg19.VGG19(include_top=False, weights='imagenet')
+    outputs = [vgg.get_layer(name).output for name in style_layers + content_layers]
+    return Model([vgg.input], outputs)
+
+# Losses
+def gram_matrix(tensor):
+    x = tensor
+    x = tf.squeeze(x)
+    x = tf.reshape(x, (-1, x.shape[-1]))
+    return tf.matmul(x, x, transpose_a=True)
+
+def compute_loss(outputs, style_outputs, content_outputs):
+    style_loss = tf.add_n([tf.reduce_mean((gram_matrix(o) - gram_matrix(s))**2)
+                          for o, s in zip(outputs[:num_style_layers], style_outputs)])
+    style_loss *= 1e-2 / num_style_layers
+
+    content_loss = tf.add_n([tf.reduce_mean((o - c)**2)
+                            for o, c in zip(outputs[num_style_layers:], content_outputs)])
+    content_loss *= 1e4 / num_content_layers
+    return style_loss + content_loss
+
+# Setup
+model = get_model()
+for layer in model.layers:
+    layer.trainable = False
+
+style_outputs = model(style_image)
+content_outputs = model(content_image)
+
+generated_image = tf.Variable(content_image, dtype=tf.float32)
+
+# Optimizer
+opt = tf.optimizers.Adam(learning_rate=5.0)
+
+@tf.function()
+def train_step(image):
+    with tf.GradientTape() as tape:
+        outputs = model(image)
+        loss = compute_loss(outputs, style_outputs, content_outputs)
+    grad = tape.gradient(loss, image)
+    opt.apply_gradients([(grad, image)])
+    image.assign(tf.clip_by_value(image, -103.939, 255.0 - 103.939))
+
+# Training
+epochs = 250
+for i in range(epochs):
+    train_step(generated_image)
+    if i % 50 == 0:
+        print(f"Step {i}")
+
+# Save output
+result = deprocess_img(generated_image.numpy())
+Image.fromarray(result).save("output/generated.jpg")
