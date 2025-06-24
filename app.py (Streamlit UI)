@@ -1,0 +1,11 @@
+import streamlit as st
+from PIL import Image
+import os
+
+st.title("🎨 Neural Style Transfer")
+
+if st.button("Show Result"):
+    if os.path.exists("output/generated.jpg"):
+        st.image("output/generated.jpg")
+    else:
+        st.warning("Please run nst.py first.")
