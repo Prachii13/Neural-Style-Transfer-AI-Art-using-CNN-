@@ -1,0 +1,9 @@
+neural_style_transfer/
+├── content.jpg                       # Your content image
+├── style.jpg                         # Your style image
+├── nst.py                            # Neural Style Transfer code
+├── app.py                            # Streamlit interface
+├── output/generated.jpg              # Result image
+├── requirements.txt
+├── README.md
+└── .gitignore
